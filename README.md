@@ -1,4 +1,4 @@
 # ytmdown
 Easy Youtube downloader for linux.
 
-### ==**Currently in Progress**==
+### **Currently in Progress**
