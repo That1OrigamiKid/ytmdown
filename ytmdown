@@ -1,0 +1,80 @@
+#!/bin/bash
+URL="$1"
+FORMAT="$2"
+COOKIES="/usr/ytmdown/cookies.txt"
+TMP_LIST="/tmp/ytmdown_list.txt"
+
+# Cleanup temp file on exit
+trap 'rm -f "$TMP_LIST"' EXIT INT TERM
+
+# Usage check
+if [ -z "$URL" ] || [ -z "$FORMAT" ]; then
+    echo "Usage: ytmdown <YouTube URL> <audio format: mp3|wav|flac|m4a>"
+    exit 1
+fi
+
+# Check dependencies
+command -v yt-dlp >/dev/null 2>&1 || { echo "yt-dlp is not installed."; exit 1; }
+command -v ffmpeg >/dev/null 2>&1 || { echo "ffmpeg is not installed."; exit 1; }
+
+# Check cookies file
+if [ ! -f "$COOKIES" ]; then
+    echo "Cookies file not found: $COOKIES"
+    exit 1
+fi
+
+# Validate audio format
+case "$FORMAT" in
+    mp3|wav|flac|m4a) ;;
+    *)
+        echo "Invalid format: $FORMAT"
+        echo "Supported formats: mp3, wav, flac, m4a"
+        exit 1
+        ;;
+esac
+
+echo "Fetching track list..."
+if ! yt-dlp \
+  --cookies "$COOKIES" \
+  --flat-playlist \
+  --print "%(title)s|%(id)s" \
+  "$URL" > "$TMP_LIST"; then
+    echo "Failed to fetch playlist"
+    exit 1
+fi
+
+TOTAL=$(wc -l < "$TMP_LIST")
+if [ "$TOTAL" -eq 0 ]; then
+    echo "No tracks found."
+    exit 1
+fi
+
+echo "Found $TOTAL tracks."
+
+# Set extra options for MP3
+if [[ "$FORMAT" == "mp3" ]]; then
+    EXTRA=(--add-metadata --embed-thumbnail)
+else
+    EXTRA=()
+fi
+
+INDEX=1
+while IFS="|" read -r TITLE ID; do
+    echo
+    echo "▶ [$INDEX/$TOTAL] $TITLE"
+    
+    yt-dlp \
+      --cookies "$COOKIES" \
+      -x --audio-format "$FORMAT" \
+      --progress \
+      --newline \
+      -o "%(playlist_index)02d - %(title)s.%(ext)s" \
+      "${EXTRA[@]}" \
+      "https://www.youtube.com/watch?v=$ID" \
+      || echo "Failed to download: $TITLE"
+    
+    INDEX=$((INDEX+1))
+done < "$TMP_LIST"
+
+echo
+echo "[✓] All downloads complete."
